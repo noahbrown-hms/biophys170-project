@@ -1,0 +1,130 @@
+---
+title: "TAD Boundaries & GWAS Variants"
+author: "Noah Brown"
+date: "12/8/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(GenomicRanges)
+library(gwascat)
+library(rtracklayer)
+```
+
+```{r}
+# Get Rao data
+Rao.domains <- read.csv("../data/hg19_domain_boundaries.csv",header=TRUE)
+Rao.loops <- read.csv("../data/hg19_loop_boundaries.csv",header=TRUE)
+```
+
+```{r}
+# Get CTCF ChIP-seq track from Snyder lab @ Stanford via GEO
+ctcf <- read.csv("../data/wgEncodeSydhTfbsGm12878Ctcfsc15914c20StdPk.narrowPeak",
+                 sep = "\t",header=TRUE)
+```
+
+```{r}
+# Load flattened ClinVar data
+
+# clinvar <- read.table('clinvar_alleles.tsv',sep='\t',header=T,quote='',comment.char='')
+
+```
+
+```{r}
+# Get GWAS catalog data
+
+# Manually downloaded (deprecated)
+# gwas <- read.csv("../data/gwas_catalog_v1.0.1-associations_e90_r2017-12-04.tsv",
+#                sep = "\t",header=TRUE)
+
+# using package gwascat to get most up-to-data GWAS hits
+gwas38 <- makeCurrentGwascat()  # result varies by day
+head(gwas38)
+
+```
+
+```{r}
+# Transform into GRanges objects
+gr.Rao.domains <- GRanges(seqnames = paste0("chr",Rao.domains$chrms),
+              ranges = IRanges(start = Rao.domains$starts, end = Rao.domains$ends))
+values(gr.Rao.domains) <- DataFrame(DomainID = 1:length(gr.Rao.domains))
+
+gr.Rao.loops <- GRanges(seqnames = paste0("chr",Rao.loops$chrms),
+              ranges = IRanges(start = Rao.loops$starts, end = Rao.loops$ends))
+values(gr.Rao.loops) <- DataFrame(DomainID = 1:length(gr.Rao.loops))
+
+gr.ctcf <- GRanges(seqnames = ctcf$chrX,
+              ranges = IRanges(start = ctcf$X10087209, end = ctcf$X10088161))
+
+head(gr.Rao.domains)
+```
+
+```{r}
+# Liftover gwas data to hg19 from Gr38
+
+path = "../data/hg38ToHg19.over.chain"
+ch = import.chain(path)
+
+seqlevelsStyle(gwas38) = "UCSC"  # necessary
+gwas19 = liftOver(gwas38, ch)
+class(gwas19)
+```
+
+```{r}
+gwas19 <- unlist(gwas19)
+genome(gwas19) = "hg19"
+#gwas19 = new("gwaswloc", gwas19)
+#gwas19
+
+gwas19 <- sort(sortSeqlevels(gwas19))
+```
+
+```{r}
+# intersect CTCT ChIP-seq peaks with GWAS
+
+int.ctgw <- subsetByOverlaps(gwas19,gr.ctcf)
+ctgw.traits <- as.factor(int.ctgw$MAPPED_TRAIT)
+
+gw.traits <- as.factor(gwas19$MAPPED_TRAIT)
+
+## further enrichment analysis? 
+
+```
+
+
+```{r}
+# get domain boundaries from Rao
+window.size = 50000
+
+start.bounds <- promoters(gr.Rao.domains,upstream=window.size/2,downstream=window.size/2)
+values(start.bounds) <- DataFrame(fromDomainID = gr.Rao.domains$DomainID-1,toDomainID=gr.Rao.domains$DomainID)
+temp <- gr.Rao.domains
+strand(temp) <- '-'
+end.bounds <- promoters(temp,upstream=window.size/2,downstream=window.size/2)
+values(end.bounds) <- DataFrame(fromDomainID = gr.Rao.domains$DomainID,toDomainID=gr.Rao.domains$DomainID+1)
+strand(end.bounds) <- '*'
+
+Rao.domain.boundaries <- sort(sortSeqlevels(c(start.bounds,end.bounds)))
+
+```
+
+```{r}
+# intersect Rao domains and GWAS results
+
+int.Rdomgw <- subsetByOverlaps(gwas19,Rao.domain.boundaries)
+
+# intersect GWAS results with CTCF ChIP-seq peaks IN defined boundary regions
+
+int.ctRdom <- intersect(gr.ctcf,Rao.domain.boundaries)
+int.ctRdomgw <- subsetByOverlaps(gwas19,int.ctRdom)
+
+# some traits associated with low pvalue gwas hits
+sort(table(as.factor(int.ctRdomgw[int.ctRdomgw$PVALUE_MLOG>10]$MAPPED_TRAIT)),decreasing = T)
+
+```
+
+
+
+
+
