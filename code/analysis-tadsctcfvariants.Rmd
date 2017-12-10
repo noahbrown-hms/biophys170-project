@@ -81,7 +81,7 @@ gwas19 <- sort(sortSeqlevels(gwas19))
 ```
 
 ```{r}
-# intersect CTCT ChIP-seq peaks with GWAS
+# intersect CTCF ChIP-seq peaks with GWAS
 
 int.ctgw <- subsetByOverlaps(gwas19,gr.ctcf)
 ctgw.traits <- as.factor(int.ctgw$MAPPED_TRAIT)
